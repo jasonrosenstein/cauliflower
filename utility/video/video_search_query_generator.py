@@ -24,26 +24,26 @@ log_directory = ".logs/gpt_logs" # Keep logging directory, though content might 
 
 prompt = """# Instructions
 
-Given the following video script and timed captions, generate **one single, best, visually descriptive keyword phrase** for each time segment that accurately represents the main subject or action described in the caption for that specific time segment. This keyword phrase will be used to search for stock videos.
+Given the following video script and timed captions, generate **one single, best, visually descriptive keyword phrase** for each time segment that **perfectly matches the primary visual subject or action** described in the caption for that specific time segment. This keyword phrase will be used to search for stock videos.
 
-- Focus on **visual concreteness**. The phrase must describe something easily searchable in a video library (e.g., "man walking dog", "computer code scrolling", "ancient Egyptian tomb").
-- **Directly relate** the keyword phrase to the content of the caption segment.
-- If a caption is vague, use context from the script or surrounding captions if necessary, but prioritize the specific segment's content.
-- Aim for phrases, not single words, if possible (e.g., "fast car" instead of "car").
-- Ensure the time periods are strictly consecutive and cover the entire length of the video.
-- Output **only** a valid JSON list in the format: `[[[t1, t2], "best keyword phrase 1"], [[t2, t3], "best keyword phrase 2"], ...]`. Do not include any other text, explanations, or markdown formatting around the JSON.
+- **Segment Duration:** Aim for segments that are roughly 5-8 seconds long. Combine shorter adjacent caption segments if their content is visually similar or continuous.
+- **Visual Precision:** The phrase MUST describe something concrete and visually searchable (e.g., "man walking dog", "computer code scrolling", "ancient Egyptian tomb"). Avoid abstract concepts.
+- **Direct Match:** The keyword phrase must directly correspond to the visual implied by the words in *that specific time segment*. Do not generalize too much.
+- **Phrases Preferred:** Use descriptive phrases (2-4 words) instead of single words where possible (e.g., "fast car" not "car").
+- **Consecutive & Complete:** Ensure the time periods [[t1, t2], [t2, t3], ...] are strictly consecutive and cover the entire duration specified by the timed captions.
+- **Output Format:** Output **only** a valid JSON list in the format: `[[[t1, t2], "best keyword phrase 1"], [[t2, t3], "best keyword phrase 2"], ...]`. No extra text, explanations, or markdown.
 
 Example Input:
 Script: The cheetah is the fastest land animal...
-Timed Captions: ((1.0, 3.5), 'cheetah is the fastest') ((3.5, 6.0), 'land animal capable of running')
+Timed Captions: ((1.0, 3.5), 'cheetah is the fastest') ((3.5, 6.0), 'land animal capable of running') ((6.0, 8.0), 'on the savanna')
 
-Example Output:
-[[[1.0, 3.5], "cheetah running fast"], [[3.5, 6.0], "savanna landscape"]]
+Example Output (Aiming for longer segments):
+[[[1.0, 6.0], "cheetah running fast"], [[6.0, 8.0], "African savanna landscape"]]
 
 Important Guidelines:
 - **English Only:** Keywords must be in English.
 - **Visual Focus:** Describe *what you would see*, not abstract concepts. "Sad man" is better than "sadness".
-- **Concise:** Keep phrases relatively short but descriptive.
+- **Concise but Descriptive:** Phrases should be 2-4 words ideally.
 - **JSON Only:** The entire output must be only the JSON list, starting with `[` and ending with `]`.
 
 Note: Your response should be the response only and no extra text or data.
