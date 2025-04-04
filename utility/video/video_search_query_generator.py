@@ -14,7 +14,7 @@ else:
     try:
         genai.configure(api_key=GOOGLE_API_KEY)
         # Using the specified experimental model
-        model = genai.GenerativeModel('gemini-2.5-pro-exp-03-25')
+        model = genai.GenerativeModel('gemini-2.5-p4o-exp-03-25')
     except Exception as e:
         print(f"Error configuring Gemini API: {e}")
         model = None # Ensure model is None if configuration fails
@@ -26,7 +26,7 @@ prompt = """# Instructions
 
 Given the following video script and timed captions, generate **one single, best, visually descriptive keyword phrase** for each time segment that **perfectly matches the primary visual subject or action** described in the caption for that specific time segment. This keyword phrase will be used to search for stock videos.
 
-- **Segment Duration:** Aim for segments that are roughly 5-8 seconds long. Combine shorter adjacent caption segments if their content is visually similar or continuous.
+- **Segment Duration:** Aim for segments that are roughly 2-4 seconds long. If a caption segment is longer, you might break it down into multiple consecutive time segments with appropriate keywords.
 - **Visual Precision:** The phrase MUST describe something concrete and visually searchable (e.g., "man walking dog", "computer code scrolling", "ancient Egyptian tomb"). Avoid abstract concepts.
 - **Direct Match:** The keyword phrase must directly correspond to the visual implied by the words in *that specific time segment*. Do not generalize too much.
 - **Phrases Preferred:** Use descriptive phrases (2-4 words) instead of single words where possible (e.g., "fast car" not "car").
@@ -35,10 +35,10 @@ Given the following video script and timed captions, generate **one single, best
 
 Example Input:
 Script: The cheetah is the fastest land animal...
-Timed Captions: ((1.0, 3.5), 'cheetah is the fastest') ((3.5, 6.0), 'land animal capable of running') ((6.0, 8.0), 'on the savanna')
+Timed Captions: ((1.0, 3.5), 'cheetah is the fastest') ((3.5, 6.0), 'land animal capable of running')
 
-Example Output (Aiming for longer segments):
-[[[1.0, 6.0], "cheetah running fast"], [[6.0, 8.0], "African savanna landscape"]]
+Example Output (Aiming for shorter segments):
+[[[1.0, 3.5], "cheetah running fast"], [[3.5, 6.0], "cheetah running savanna"]]
 
 Important Guidelines:
 - **English Only:** Keywords must be in English.
