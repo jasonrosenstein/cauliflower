@@ -14,7 +14,7 @@ else:
     try:
         genai.configure(api_key=GOOGLE_API_KEY)
         # Using the specified experimental model
-        model = genai.GenerativeModel('gemini-2.5-p4o-exp-03-25')
+        model = genai.GenerativeModel('gemini-2.5-pro-exp-03-25')
     except Exception as e:
         print(f"Error configuring Gemini API: {e}")
         model = None # Ensure model is None if configuration fails
@@ -24,21 +24,21 @@ log_directory = ".logs/gpt_logs" # Keep logging directory, though content might 
 
 prompt = """# Instructions
 
-Given the following video script and timed captions, generate **one single, best, visually descriptive keyword phrase** for each time segment that **perfectly matches the primary visual subject or action** described in the caption for that specific time segment. This keyword phrase will be used to search for stock videos.
+You are creating visuals for a fast-paced, engaging TikTok video based on the provided script and timed captions. Your task is to generate **one single, best, visually descriptive keyword phrase** for each time segment that **perfectly matches the primary visual subject or action** described in the caption for that specific time segment.
 
-- **Segment Duration:** Aim for segments that are roughly 2-4 seconds long. If a caption segment is longer, you might break it down into multiple consecutive time segments with appropriate keywords.
-- **Visual Precision:** The phrase MUST describe something concrete and visually searchable (e.g., "man walking dog", "computer code scrolling", "ancient Egyptian tomb"). Avoid abstract concepts.
-- **Direct Match:** The keyword phrase must directly correspond to the visual implied by the words in *that specific time segment*. Do not generalize too much.
-- **Phrases Preferred:** Use descriptive phrases (2-4 words) instead of single words where possible (e.g., "fast car" not "car").
+- **Target Platform:** TikTok (needs dynamic, visually interesting clips).
+- **Segment Duration:** Aim for segments that are roughly 3-5 seconds long. Combine very short adjacent caption segments if their content is visually similar or continuous, but prioritize frequent cuts if the visual subject changes.
+- **Visual Precision & Relevance:** This is CRITICAL. The phrase MUST describe something concrete and visually searchable that DIRECTLY relates to the words spoken in that exact time segment. Avoid abstract terms or overly broad keywords. If the caption says "ancient Egypt", the keyword should be specific like "Egyptian pyramids" or "hieroglyphs", not just "history".
+- **Phrases Preferred:** Use descriptive phrases (2-4 words).
 - **Consecutive & Complete:** Ensure the time periods [[t1, t2], [t2, t3], ...] are strictly consecutive and cover the entire duration specified by the timed captions.
 - **Output Format:** Output **only** a valid JSON list in the format: `[[[t1, t2], "best keyword phrase 1"], [[t2, t3], "best keyword phrase 2"], ...]`. No extra text, explanations, or markdown.
 
 Example Input:
-Script: The cheetah is the fastest land animal...
-Timed Captions: ((1.0, 3.5), 'cheetah is the fastest') ((3.5, 6.0), 'land animal capable of running')
+Script: Kava, a traditional drink... used in ceremonies... relaxing effects...
+Timed Captions: ((0.5, 2.0), 'Kava a traditional drink') ((2.0, 4.5), 'used in ceremonies') ((4.5, 6.5), 'relaxing effects...')
 
-Example Output (Aiming for shorter segments):
-[[[1.0, 3.5], "cheetah running fast"], [[3.5, 6.0], "cheetah running savanna"]]
+Example Output (TikTok Style):
+[[[0.5, 2.0], "Kava root powder"], [[2.0, 4.5], "Pacific islander ceremony"], [[4.5, 6.5], "person relaxing peacefully"]]
 
 Important Guidelines:
 - **English Only:** Keywords must be in English.

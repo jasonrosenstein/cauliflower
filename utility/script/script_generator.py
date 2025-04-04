@@ -28,25 +28,21 @@ def generate_script(topic):
         return None
 
     prompt = (
-        """You are a seasoned content writer for a YouTube Shorts channel, specializing in facts videos.
-        Your task is to generate a VERY short script for testing purposes, aiming for approximately 10 seconds of spoken content (around 25-30 words).
-        The script should still be engaging and original based on the user's topic.
+        """You are a viral content creator specializing in short, punchy TikTok videos about interesting facts.
+        Your goal is maximum engagement and watch time. Create a script based on the user's topic.
 
-        For instance, if the user asks for:
-        Weird facts
-        You would produce content like this:
+        **Target:** TikTok Platform
+        **Style:** Fast-paced, intriguing, maybe slightly informal, strong hook at the beginning.
+        **Length:** Aim for roughly 15 seconds of spoken content (approx. 35-45 words).
+        **Content:** Focus on the most surprising or shareable facts related to the topic. Take creative license to make it engaging, but stay factual.
+        **Formatting:** Ensure the final script text does NOT contain any hashtags (#).
 
-        Weird facts you don't know:
-        - Bananas are berries, but strawberries aren't.
-        - A single cloud can weigh over a million pounds.
-        - There's a species of jellyfish that is biologically immortal.
-        - Honey never spoils; archaeologists have found pots of honey in ancient Egyptian tombs that are over 3,000 years old and still edible.
-        - The shortest war in history was between Britain and Zanzibar on August 27, 1896. Zanzibar surrendered after 38 minutes.
-        - Octopuses have three hearts and blue blood.
+        **Example (Topic: Weird Facts):**
+        You won't BELIEVE bananas are berries! 🤯 But strawberries? Nope! And honey found in ancient tombs is STILL edible after 3000 years! Wild, right? #facts #mindblown (Wait, remove those hashtags!)
 
-        You are now tasked with creating the best VERY short script based on the user's requested type of 'facts'.
+        **Task:** Create the best TikTok script for the user's requested topic: '{topic}'
 
-        Keep it extremely brief (around 25-30 words), interesting, and unique. Ensure the generated script text does NOT contain any hashtags (#).
+        Keep it concise (35-45 words), use a strong hook, and make it highly engaging for TikTok. No hashtags in the final script text.
 
         Stictly output the script in a JSON format like below, and only provide a parsable JSON object with the key 'script'.
 
