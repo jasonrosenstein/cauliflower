@@ -99,22 +99,31 @@ def yolo_reframe_clip(clip, target_aspect=9/16, target_height=1920):
                 obj_center_x = (obj_x1 + obj_x2) / 2
                 obj_center_y = (obj_y1 + obj_y2) / 2
 
-                # Calculate desired crop dimensions based on target aspect
+                # Calculate desired crop dimensions based on target aspect with padding
+                padding_factor = 1.2 # Zoom out slightly (increase crop window size)
                 if current_aspect > target_aspect: # Landscape video
-                    new_w = h * target_aspect
+                    # Calculate minimum width needed for 9:16
+                    min_w = h * target_aspect
+                    # Add padding, but don't exceed original width
+                    new_w = min(w, min_w * padding_factor)
                     new_h = h
+                    # Center the padded window around the object
                     x1 = max(0, obj_center_x - new_w / 2)
-                    x2 = min(w, obj_center_x + new_w / 2)
-                    # Adjust if crop window goes out of bounds
-                    if x2 - x1 < new_w: x1 = max(0, x2 - new_w)
+                    x2 = min(w, x1 + new_w)
+                    # Recalculate x1 if x2 hit the boundary
+                    x1 = max(0, x2 - new_w)
                     y1, y2 = 0, h
                 else: # Portrait video (narrower than target)
-                    new_h = w / target_aspect
+                    # Calculate minimum height needed
+                    min_h = w / target_aspect
+                    # Add padding, but don't exceed original height
+                    new_h = min(h, min_h * padding_factor)
                     new_w = w
+                    # Center the padded window around the object
                     y1 = max(0, obj_center_y - new_h / 2)
-                    y2 = min(h, obj_center_y + new_h / 2)
-                    # Adjust if crop window goes out of bounds
-                    if y2 - y1 < new_h: y1 = max(0, y2 - new_h)
+                    y2 = min(h, y1 + new_h)
+                    # Recalculate y1 if y2 hit the boundary
+                    y1 = max(0, y2 - new_h)
                     x1, x2 = 0, w
 
                 x1, y1, x2, y2 = map(int, [x1, y1, x2, y2])
