@@ -10,12 +10,13 @@ import sys
 APP_SCRIPT_PATH = "app.py"
 VIDEO_OUTPUT_FILENAME = "rendered_video.mp4"
 PYTHON_EXECUTABLE = sys.executable # Use the same python that runs gradio
+AUDIO_FILENAME = "audio_tts.wav" # Define audio filename constant
 
 # --- Helper Function to run the script and stream output ---
 def run_video_script(topic: str, progress=gr.Progress(track_tqdm=True)):
     """
     Runs the app.py script with the given topic and streams its output.
-    Yields updates for the log textbox and finally the video path.
+    Yields updates for the button, log textbox, and finally the video path.
     """
     log_queue = queue.Queue()
     stop_event = threading.Event()
@@ -28,11 +29,20 @@ def run_video_script(topic: str, progress=gr.Progress(track_tqdm=True)):
 
     if not google_api_key or not pexels_api_key:
         yield "Error: GOOGLE_API_KEY and PEXELS_KEY environment variables must be set before launching.", None
+        # --- Start: Update Button State ---
+        yield gr.Button(value="Generating...", interactive=False), "Starting...", None
         return
+    # --- End: Update Button State ---
 
-    # Ensure the output video doesn't exist from a previous run
+    # --- Clean up previous intermediate files ---
     if os.path.exists(VIDEO_OUTPUT_FILENAME):
+        print(f"Removing previous output file: {VIDEO_OUTPUT_FILENAME}")
         os.remove(VIDEO_OUTPUT_FILENAME)
+    if os.path.exists(AUDIO_FILENAME):
+        print(f"Removing previous audio file: {AUDIO_FILENAME}")
+        os.remove(AUDIO_FILENAME)
+    # We can't easily clean up Pexels temp files from here, render_engine handles that
+    # --- End Cleanup ---
 
     # Command construction
     command = [
@@ -90,8 +100,10 @@ def run_video_script(topic: str, progress=gr.Progress(track_tqdm=True)):
                     full_log += line
                     if stream_type == "stderr":
                         error_output += line # Capture stderr separately for error checking
-                    yield full_log, None # Update log output, no video yet
+                    # Yield updates for button (still generating), log, and no video
+                    yield gr.Button(value="Generating...", interactive=False), full_log, None
             except queue.Empty:
+                # Check if process finished *and* streams are done reading
                 if process.poll() is not None and stdout_finished and stderr_finished:
                     break # Process finished and streams are done
                 continue # Continue waiting for logs
@@ -104,24 +116,35 @@ def run_video_script(topic: str, progress=gr.Progress(track_tqdm=True)):
             error_message = f"Script failed with exit code {process.returncode}.\n--- STDERR ---\n{error_output}"
             print(error_message)
             full_log += f"\n\nERROR:\n{error_message}"
-            yield full_log, None
+            # Final update: Reset button, show log, no video
+            yield gr.Button(value="Generate Video", interactive=True), full_log, None
         elif os.path.exists(VIDEO_OUTPUT_FILENAME):
             video_path = VIDEO_OUTPUT_FILENAME
             full_log += f"\n\nVideo generated: {video_path}"
-            yield full_log, video_path # Final update with video path
+            # Final update: Reset button, show log, show video
+            yield gr.Button(value="Generate Video", interactive=True), full_log, video_path
         else:
             error_message = f"Script finished but output video '{VIDEO_OUTPUT_FILENAME}' not found."
             print(error_message)
             full_log += f"\n\nERROR:\n{error_message}"
-            yield full_log, None
+            # Final update: Reset button, show log, no video
+            yield gr.Button(value="Generate Video", interactive=True), full_log, None
 
-    except FileNotFoundError:
-        yield f"Error: '{PYTHON_EXECUTABLE}' or '{APP_SCRIPT_PATH}' not found. Make sure Python is installed and you are in the correct directory.", None
+    except FileNotFoundError as e:
+        error_msg = f"Error: '{PYTHON_EXECUTABLE}' or '{APP_SCRIPT_PATH}' not found. Make sure Python is installed and you are in the correct directory.\n{e}"
+        print(error_msg)
+        yield gr.Button(value="Generate Video", interactive=True), error_msg, None
     except Exception as e:
-        yield f"An unexpected error occurred: {e}", None
+        error_msg = f"An unexpected error occurred: {e}"
+        print(error_msg)
+        yield gr.Button(value="Generate Video", interactive=True), error_msg, None
     finally:
+        # Ensure button is always re-enabled, even if errors occurred before final yield
+        yield gr.Button(value="Generate Video", interactive=True), full_log, video_path
         if process and process.poll() is None:
-            process.terminate() # Ensure process is killed if function exits unexpectedly
+            print("Terminating subprocess...")
+            process.terminate()
+            process.wait() # Wait for termination
 
 # --- Gradio Interface ---
 with gr.Blocks() as demo:
@@ -138,10 +161,12 @@ with gr.Blocks() as demo:
     with gr.Row():
         video_output = gr.Video(label="Generated Video")
 
+    # Add submit_button to outputs to allow updating its state
     submit_button.click(
         fn=run_video_script,
         inputs=[topic_input],
-        outputs=[log_output, video_output]
+        outputs=[submit_button, log_output, video_output],
+        show_progress="full" # Keep loading animation as well
     )
 
 if __name__ == "__main__":
