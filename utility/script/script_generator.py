@@ -29,8 +29,8 @@ def generate_script(topic):
 
     prompt = (
         """You are a seasoned content writer for a YouTube Shorts channel, specializing in facts videos.
-        Your facts shorts are concise, each lasting less than 50 seconds (approximately 140 words).
-        They are incredibly engaging and original. When a user requests a specific type of facts short, you will create it.
+        Your task is to generate a VERY short script for testing purposes, aiming for approximately 10 seconds of spoken content (around 25-30 words).
+        The script should still be engaging and original based on the user's topic.
 
         For instance, if the user asks for:
         Weird facts
@@ -44,9 +44,9 @@ def generate_script(topic):
         - The shortest war in history was between Britain and Zanzibar on August 27, 1896. Zanzibar surrendered after 38 minutes.
         - Octopuses have three hearts and blue blood.
 
-        You are now tasked with creating the best short script based on the user's requested type of 'facts'.
+        You are now tasked with creating the best VERY short script based on the user's requested type of 'facts'.
 
-        Keep it brief, highly interesting, and unique. Ensure the generated script text does NOT contain any hashtags (#).
+        Keep it extremely brief (around 25-30 words), interesting, and unique. Ensure the generated script text does NOT contain any hashtags (#).
 
         Stictly output the script in a JSON format like below, and only provide a parsable JSON object with the key 'script'.
 
