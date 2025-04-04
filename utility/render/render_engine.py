@@ -5,8 +5,8 @@ import zipfile
 import platform
 import subprocess
 from moviepy.editor import (AudioFileClip, CompositeVideoClip, CompositeAudioClip, ImageClip,
-                            TextClip, VideoFileClip, concatenate_videoclips) # Added concatenate_videoclips
-from moviepy.video.fx.all import crop # Import crop effect
+                            TextClip, VideoFileClip, concatenate_videoclips)
+from moviepy.video.fx.all import crop # Ensure crop is imported
 from moviepy.audio.fx.audio_loop import audio_loop
 from moviepy.audio.fx.audio_normalize import audio_normalize
 import requests
@@ -24,7 +24,6 @@ except Exception as e:
     print(f"Error loading YOLOv8 model: {e}. Intelligent cropping will be disabled.")
     yolo_model = None
 # --- End YOLO Model Loading ---
-
 
 def download_file(url, filename):
     # Simple download function
@@ -55,37 +54,48 @@ def yolo_reframe_clip(clip, target_aspect=9/16, target_height=1920):
     """
     Applies YOLO detection to find the largest object and crops/resizes
     the clip to keep it centered in a 9:16 frame.
+    Uses clip.fl for frame-by-frame processing.
     """
     if yolo_model is None: # Fallback if YOLO failed to load
         print("YOLO model not available, using simple resize.")
+        # Resize based on height, Compositing will center it
         return clip.resize(height=target_height)
 
-    # Store the bounding box of the largest object found so far
+    # Store the bounding box of the largest object found across frames for stability
     largest_object_bbox = None
+    target_width = int(target_height * target_aspect)
 
     def process_frame(get_frame, t):
+        # This inner function is passed to clip.fl
         frame = get_frame(t)
         h, w, _ = frame.shape
         current_aspect = w / h
 
         # Default crop is center if no object detected or if already portrait
         x1, y1, x2, y2 = 0, 0, w, h
-        new_w, new_h = w, h
+        final_frame = None
 
-        if abs(current_aspect - target_aspect) > 0.01: # Only process if not already target aspect
+        # Only process if not already target aspect ratio (within tolerance)
+        if abs(current_aspect - target_aspect) > 0.01:
             results = yolo_model(frame, verbose=False) # Perform detection
             nonlocal largest_object_bbox # Allow modification of outer scope variable
 
+            current_largest_bbox_in_frame = None
             if results and results[0].boxes:
-                boxes = results[0].boxes.xyxy.cpu().numpy() # Get bounding boxes
+                boxes = results[0].boxes.xyxy.cpu().numpy()
                 areas = (boxes[:, 2] - boxes[:, 0]) * (boxes[:, 3] - boxes[:, 1])
                 if len(areas) > 0:
                     largest_object_index = np.argmax(areas)
-                    largest_object_bbox = boxes[largest_object_index] # Update largest bbox found
+                    current_largest_bbox_in_frame = boxes[largest_object_index]
+                    # Update the overall largest bbox if the current one is bigger
+                    if largest_object_bbox is None or areas[largest_object_index] > ((largest_object_bbox[2] - largest_object_bbox[0]) * (largest_object_bbox[3] - largest_object_bbox[1])):
+                         largest_object_bbox = current_largest_bbox_in_frame
 
-            # If we have detected an object, calculate crop based on it
-            if largest_object_bbox is not None:
-                obj_x1, obj_y1, obj_x2, obj_y2 = largest_object_bbox
+            # Use the largest bbox found *so far* for stability, fallback to current frame's largest
+            bbox_to_use = largest_object_bbox if largest_object_bbox is not None else current_largest_bbox_in_frame
+
+            if bbox_to_use is not None:
+                obj_x1, obj_y1, obj_x2, obj_y2 = bbox_to_use
                 obj_center_x = (obj_x1 + obj_x2) / 2
                 obj_center_y = (obj_y1 + obj_y2) / 2
 
@@ -96,40 +106,56 @@ def yolo_reframe_clip(clip, target_aspect=9/16, target_height=1920):
                     x1 = max(0, obj_center_x - new_w / 2)
                     x2 = min(w, obj_center_x + new_w / 2)
                     # Adjust if crop window goes out of bounds
-                    if x2 - x1 < new_w:
-                        if x1 == 0: x2 = new_w
-                        else: x1 = w - new_w
+                    if x2 - x1 < new_w: x1 = max(0, x2 - new_w)
                     y1, y2 = 0, h
-                else: # Portrait video (narrower than target) - less common case
+                else: # Portrait video (narrower than target)
                     new_h = w / target_aspect
                     new_w = w
                     y1 = max(0, obj_center_y - new_h / 2)
                     y2 = min(h, obj_center_y + new_h / 2)
-                     # Adjust if crop window goes out of bounds
-                    if y2 - y1 < new_h:
-                        if y1 == 0: y2 = new_h
-                        else: y1 = h - new_h
+                    # Adjust if crop window goes out of bounds
+                    if y2 - y1 < new_h: y1 = max(0, y2 - new_h)
                     x1, x2 = 0, w
 
-                # Ensure integer coordinates for cropping
                 x1, y1, x2, y2 = map(int, [x1, y1, x2, y2])
-                # Crop the frame
-                cropped_frame = frame[y1:y2, x1:x2]
-                # Resize to target height after cropping
-                final_frame = cv2.resize(cropped_frame, (int(target_height * target_aspect), target_height), interpolation=cv2.INTER_AREA)
-                return final_frame
+                # Ensure crop dimensions are valid
+                if y1 < y2 and x1 < x2:
+                    cropped_frame = frame[y1:y2, x1:x2]
+                    # Resize the cropped frame to the target size
+                    final_frame = cv2.resize(cropped_frame, (target_width, target_height), interpolation=cv2.INTER_AREA)
 
-        # Fallback / If already portrait: Resize the original frame
-        # Use INTER_AREA for downscaling, INTER_LINEAR for upscaling (or general case)
-        interpolation = cv2.INTER_AREA if h > target_height else cv2.INTER_LINEAR
-        resized_frame = cv2.resize(frame, (int(target_height * current_aspect), target_height), interpolation=interpolation)
-        return resized_frame
+        # If intelligent cropping didn't produce a frame (e.g., no object, already portrait, error)
+        if final_frame is None:
+             if current_aspect > target_aspect: # Landscape center crop fallback
+                 new_w = int(h * target_aspect)
+                 x_center = w // 2
+                 x1 = max(0, x_center - new_w // 2)
+                 cropped_frame = frame[:, x1:x1+new_w]
+                 final_frame = cv2.resize(cropped_frame, (target_width, target_height), interpolation=cv2.INTER_AREA)
+             else: # Portrait or square - resize height and let compositing center it
+                 interpolation = cv2.INTER_AREA if h > target_height else cv2.INTER_LINEAR
+                 final_frame = cv2.resize(frame, (int(target_height * current_aspect), target_height), interpolation=interpolation)
 
-    # Apply the processing function to each frame
-    new_clip = clip.fl_image(process_frame)
-    # Set the size explicitly after processing
-    return new_clip.set_make_frame(lambda t: new_clip.get_frame(t)).resize(height=target_height) # Force resize again just in case
+        # Final check to ensure output frame matches target size exactly, padding if necessary
+        fh, fw, _ = final_frame.shape
+        if fh != target_height or fw != target_width:
+             background = np.zeros((target_height, target_width, 3), dtype=np.uint8)
+             paste_x = (target_width - fw) // 2
+             paste_y = (target_height - fh) // 2
+             # Ensure pasting coordinates are valid
+             if paste_y >= 0 and paste_y+fh <= target_height and paste_x >= 0 and paste_x+fw <= target_width:
+                 background[paste_y:paste_y+fh, paste_x:paste_x+fw] = final_frame
+                 return background
+             else: # If pasting fails somehow, return the incorrectly sized frame
+                 print(f"Warning: Could not correctly pad frame to target size. Final frame size: {fw}x{fh}")
+                 return final_frame
+        else:
+             return final_frame
 
+    # Apply the frame processor using fl
+    processed_clip = clip.fl(process_frame, apply_to=['mask']) # apply_to=['mask'] might be needed if clip has mask
+
+    return processed_clip
 # --- End YOLO Cropping Function ---
 
 
@@ -154,27 +180,31 @@ def get_output_media(audio_file_path, timed_captions, background_video_data, vid
 
         video_filename = None
         try:
+            # Create a temporary file to download the video
             temp_video_file = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False)
             video_filename = temp_video_file.name
-            temp_video_file.close()
-            temp_files.append(video_filename)
+            temp_video_file.close() # Close handle, file persists because delete=False
+            temp_files.append(video_filename) # Add to cleanup list *before* download attempt
 
             print(f"Downloading {video_url} to {video_filename}")
             download_file(video_url, video_filename)
 
+            # Load clip
             video_clip = VideoFileClip(video_filename)
 
             # --- Apply YOLO Reframing/Cropping ---
             print(f"Applying YOLO reframing to clip for segment {t1}-{t2}")
-            reframed_clip = yolo_reframe_clip(video_clip) # Pass to the new function
+            # Pass the original clip to the reframing function
+            reframed_clip = yolo_reframe_clip(video_clip)
             # --- End YOLO Reframing ---
 
-            # Set timing and add to list
+            # Set timing and add the *reframed* clip to the list
             reframed_clip = reframed_clip.set_start(t1).set_duration(t2 - t1).set_end(t2)
-            visual_clips.append(reframed_clip)
+            visual_clips.append(reframed_clip) # Append the processed clip
 
         except Exception as e:
              print(f"Error processing video clip {video_url} (downloaded to {video_filename}): {e}")
+             # Cleanup is handled in the finally block, just continue
              continue
 
     # --- Process Audio ---
@@ -192,13 +222,15 @@ def get_output_media(audio_file_path, timed_captions, background_video_data, vid
     caption_clips = [] # Keep captions separate initially
     for (t1, t2), text in timed_captions:
         try:
+            # Create text clip
             text_clip = TextClip(txt=text, fontsize=70, color="white", stroke_width=2, stroke_color="black", method="label")
             text_clip = text_clip.set_start(t1).set_duration(t2 - t1).set_end(t2)
+            # Position text at the bottom center
             text_clip = text_clip.set_position(("center", "bottom"))
             caption_clips.append(text_clip)
         except Exception as e:
             print(f"Error creating text clip for '{text}': {e}")
-            continue
+            continue # Skip this text clip if error occurs
 
     # --- Final Composition ---
     if not visual_clips:
@@ -206,12 +238,16 @@ def get_output_media(audio_file_path, timed_captions, background_video_data, vid
         final_video = None
     else:
         try:
+            # Calculate max duration from visual clips
+            max_visual_duration = max(vc.end for vc in visual_clips if vc.end is not None) if visual_clips else 0
+
             # Composite background clips first
-            background_composite = CompositeVideoClip(visual_clips, size=(1080, 1920)).set_duration(max(vc.end for vc in visual_clips))
+            background_composite = CompositeVideoClip(visual_clips, size=(1080, 1920)).set_duration(max_visual_duration)
 
             # Composite captions on top of the background
-            final_video = CompositeVideoClip([background_composite] + caption_clips, size=(1080, 1920))
+            final_video_with_captions = CompositeVideoClip([background_composite] + caption_clips, size=(1080, 1920)).set_duration(max_visual_duration)
 
+            final_video = final_video_with_captions # Start with video + captions
 
             if audio_clips:
                 final_audio = CompositeAudioClip(audio_clips)
@@ -222,13 +258,16 @@ def get_output_media(audio_file_path, timed_captions, background_video_data, vid
                      final_video.audio = final_audio.set_duration(final_duration) # Ensure audio duration matches
                 else:
                      print("Warning: Could not determine audio duration.")
-                     if final_video.duration is None: # Set duration from visuals if no audio duration
-                         max_end_time = max(vc.end for vc in visual_clips if vc.end is not None)
-                         if max_end_time is not None: final_video = final_video.set_duration(max_end_time)
+                     # Use visual duration if audio duration is unknown
+                     if final_video.duration is None:
+                         final_video = final_video.set_duration(max_visual_duration)
 
             elif final_video.duration is None: # No audio and no duration from visuals?
-                 max_end_time = max(vc.end for vc in visual_clips if vc.end is not None)
-                 if max_end_time is not None: final_video = final_video.set_duration(max_end_time)
+                 print("Warning: Could not determine video duration from visuals.")
+                 # As a last resort, maybe use caption timings?
+                 max_caption_end = max(cc.end for cc in caption_clips if cc.end is not None) if caption_clips else 0
+                 if max_caption_end > 0:
+                     final_video = final_video.set_duration(max_caption_end)
 
 
             if final_video.duration is None:
