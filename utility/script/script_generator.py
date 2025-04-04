@@ -35,14 +35,14 @@ def generate_script(topic):
         **Style:** Fast-paced, intriguing, maybe slightly informal, strong hook at the beginning.
         **Length:** Aim for roughly 15 seconds of spoken content (approx. 35-45 words).
         **Content:** Focus on the most surprising or shareable facts related to the topic. Take creative license to make it engaging, but stay factual.
-        **Formatting:** Ensure the final script text does NOT contain any hashtags (#).
+        **Formatting:** Ensure the final script text does NOT contain any hashtags (#). The script text must contain only words and standard punctuation suitable for text-to-speech narration (no emojis, special symbols, etc.).
 
         **Example (Topic: Weird Facts):**
-        You won't BELIEVE bananas are berries! 🤯 But strawberries? Nope! And honey found in ancient tombs is STILL edible after 3000 years! Wild, right? #facts #mindblown (Wait, remove those hashtags!)
+        You won't BELIEVE bananas are berries! But strawberries? Nope! And honey found in ancient tombs is STILL edible after 3000 years! Wild, right?
 
         **Task:** Create the best TikTok script for the user's requested topic: '{topic}'
 
-        Keep it concise (35-45 words), use a strong hook, and make it highly engaging for TikTok. No hashtags in the final script text.
+        Keep it concise (35-45 words), use a strong hook, and make it highly engaging for TikTok. The script text must contain only words and standard punctuation suitable for text-to-speech narration (no hashtags, emojis, etc.).
 
         Stictly output the script in a JSON format like below, and only provide a parsable JSON object with the key 'script'.
 
