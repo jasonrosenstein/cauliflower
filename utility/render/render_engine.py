@@ -5,10 +5,26 @@ import zipfile
 import platform
 import subprocess
 from moviepy.editor import (AudioFileClip, CompositeVideoClip, CompositeAudioClip, ImageClip,
-                            TextClip, VideoFileClip)
+                            TextClip, VideoFileClip, concatenate_videoclips) # Added concatenate_videoclips
+from moviepy.video.fx.all import crop # Import crop effect
 from moviepy.audio.fx.audio_loop import audio_loop
 from moviepy.audio.fx.audio_normalize import audio_normalize
 import requests
+import numpy as np
+from ultralytics import YOLO # Import YOLO
+import cv2 # Import OpenCV
+
+# --- YOLO Model Loading ---
+# Load the YOLOv8 model (e.g., yolov8n.pt for nano version).
+# This will download the model weights the first time it's run.
+try:
+    yolo_model = YOLO('yolov8n.pt')
+    print("YOLOv8 model loaded successfully.")
+except Exception as e:
+    print(f"Error loading YOLOv8 model: {e}. Intelligent cropping will be disabled.")
+    yolo_model = None
+# --- End YOLO Model Loading ---
+
 
 def download_file(url, filename):
     # Simple download function
@@ -34,6 +50,89 @@ def get_program_path(program_name):
     program_path = search_program(program_name)
     return program_path
 
+# --- YOLO Cropping Function ---
+def yolo_reframe_clip(clip, target_aspect=9/16, target_height=1920):
+    """
+    Applies YOLO detection to find the largest object and crops/resizes
+    the clip to keep it centered in a 9:16 frame.
+    """
+    if yolo_model is None: # Fallback if YOLO failed to load
+        print("YOLO model not available, using simple resize.")
+        return clip.resize(height=target_height)
+
+    # Store the bounding box of the largest object found so far
+    largest_object_bbox = None
+
+    def process_frame(get_frame, t):
+        frame = get_frame(t)
+        h, w, _ = frame.shape
+        current_aspect = w / h
+
+        # Default crop is center if no object detected or if already portrait
+        x1, y1, x2, y2 = 0, 0, w, h
+        new_w, new_h = w, h
+
+        if abs(current_aspect - target_aspect) > 0.01: # Only process if not already target aspect
+            results = yolo_model(frame, verbose=False) # Perform detection
+            nonlocal largest_object_bbox # Allow modification of outer scope variable
+
+            if results and results[0].boxes:
+                boxes = results[0].boxes.xyxy.cpu().numpy() # Get bounding boxes
+                areas = (boxes[:, 2] - boxes[:, 0]) * (boxes[:, 3] - boxes[:, 1])
+                if len(areas) > 0:
+                    largest_object_index = np.argmax(areas)
+                    largest_object_bbox = boxes[largest_object_index] # Update largest bbox found
+
+            # If we have detected an object, calculate crop based on it
+            if largest_object_bbox is not None:
+                obj_x1, obj_y1, obj_x2, obj_y2 = largest_object_bbox
+                obj_center_x = (obj_x1 + obj_x2) / 2
+                obj_center_y = (obj_y1 + obj_y2) / 2
+
+                # Calculate desired crop dimensions based on target aspect
+                if current_aspect > target_aspect: # Landscape video
+                    new_w = h * target_aspect
+                    new_h = h
+                    x1 = max(0, obj_center_x - new_w / 2)
+                    x2 = min(w, obj_center_x + new_w / 2)
+                    # Adjust if crop window goes out of bounds
+                    if x2 - x1 < new_w:
+                        if x1 == 0: x2 = new_w
+                        else: x1 = w - new_w
+                    y1, y2 = 0, h
+                else: # Portrait video (narrower than target) - less common case
+                    new_h = w / target_aspect
+                    new_w = w
+                    y1 = max(0, obj_center_y - new_h / 2)
+                    y2 = min(h, obj_center_y + new_h / 2)
+                     # Adjust if crop window goes out of bounds
+                    if y2 - y1 < new_h:
+                        if y1 == 0: y2 = new_h
+                        else: y1 = h - new_h
+                    x1, x2 = 0, w
+
+                # Ensure integer coordinates for cropping
+                x1, y1, x2, y2 = map(int, [x1, y1, x2, y2])
+                # Crop the frame
+                cropped_frame = frame[y1:y2, x1:x2]
+                # Resize to target height after cropping
+                final_frame = cv2.resize(cropped_frame, (int(target_height * target_aspect), target_height), interpolation=cv2.INTER_AREA)
+                return final_frame
+
+        # Fallback / If already portrait: Resize the original frame
+        # Use INTER_AREA for downscaling, INTER_LINEAR for upscaling (or general case)
+        interpolation = cv2.INTER_AREA if h > target_height else cv2.INTER_LINEAR
+        resized_frame = cv2.resize(frame, (int(target_height * current_aspect), target_height), interpolation=interpolation)
+        return resized_frame
+
+    # Apply the processing function to each frame
+    new_clip = clip.fl_image(process_frame)
+    # Set the size explicitly after processing
+    return new_clip.set_make_frame(lambda t: new_clip.get_frame(t)).resize(height=target_height) # Force resize again just in case
+
+# --- End YOLO Cropping Function ---
+
+
 def get_output_media(audio_file_path, timed_captions, background_video_data, video_server):
     OUTPUT_FILE_NAME = "rendered_video.mp4"
     magick_path = get_program_path("magick")
@@ -41,7 +140,6 @@ def get_output_media(audio_file_path, timed_captions, background_video_data, vid
     if magick_path:
         os.environ['IMAGEMAGICK_BINARY'] = magick_path
     else:
-        # Provide a common fallback, but warn the user
         print("Warning: ImageMagick 'magick' command not found in PATH. Attempting fallback '/usr/bin/convert'. Text rendering might fail.")
         os.environ['IMAGEMAGICK_BINARY'] = '/usr/bin/convert'
 
@@ -50,37 +148,33 @@ def get_output_media(audio_file_path, timed_captions, background_video_data, vid
 
     # --- Process Background Videos ---
     for (t1, t2), video_url in background_video_data:
-        if not video_url: # Skip if no URL was found for this segment
+        if not video_url:
             print(f"Skipping segment {t1}-{t2} due to missing video URL.")
             continue
 
-        video_filename = None # Initialize filename
+        video_filename = None
         try:
-            # Create a temporary file to download the video
             temp_video_file = tempfile.NamedTemporaryFile(suffix=".mp4", delete=False)
             video_filename = temp_video_file.name
-            temp_video_file.close() # Close handle, file persists because delete=False
-            temp_files.append(video_filename) # Add to cleanup list *before* download attempt
+            temp_video_file.close()
+            temp_files.append(video_filename)
 
             print(f"Downloading {video_url} to {video_filename}")
             download_file(video_url, video_filename)
 
-            # Load clip
             video_clip = VideoFileClip(video_filename)
 
-            # --- Simplified Resizing Logic ---
-            target_height = 1920
-            print(f"Resizing clip {video_url} to height={target_height}")
-            video_clip = video_clip.resize(height=target_height)
-            # --- End Simplified Resizing Logic ---
+            # --- Apply YOLO Reframing/Cropping ---
+            print(f"Applying YOLO reframing to clip for segment {t1}-{t2}")
+            reframed_clip = yolo_reframe_clip(video_clip) # Pass to the new function
+            # --- End YOLO Reframing ---
 
             # Set timing and add to list
-            video_clip = video_clip.set_start(t1).set_duration(t2 - t1).set_end(t2)
-            visual_clips.append(video_clip)
+            reframed_clip = reframed_clip.set_start(t1).set_duration(t2 - t1).set_end(t2)
+            visual_clips.append(reframed_clip)
 
         except Exception as e:
              print(f"Error processing video clip {video_url} (downloaded to {video_filename}): {e}")
-             # Cleanup is handled in the finally block, just continue
              continue
 
     # --- Process Audio ---
@@ -95,52 +189,51 @@ def get_output_media(audio_file_path, timed_captions, background_video_data, vid
         print(f"Warning: Audio file not found at {audio_file_path}")
 
     # --- Process Captions ---
+    caption_clips = [] # Keep captions separate initially
     for (t1, t2), text in timed_captions:
         try:
-            # Create text clip
             text_clip = TextClip(txt=text, fontsize=70, color="white", stroke_width=2, stroke_color="black", method="label")
             text_clip = text_clip.set_start(t1).set_duration(t2 - t1).set_end(t2)
-            # Position text at the bottom center
             text_clip = text_clip.set_position(("center", "bottom"))
-            visual_clips.append(text_clip)
+            caption_clips.append(text_clip)
         except Exception as e:
             print(f"Error creating text clip for '{text}': {e}")
-            continue # Skip this text clip if error occurs
+            continue
 
     # --- Final Composition ---
     if not visual_clips:
-        print("Error: No visual clips available to render.")
-        # Cleanup handled in finally block
+        print("Error: No background visual clips were successfully processed.")
         final_video = None
     else:
         try:
-            # Set the size of the composite clip explicitly to 1080x1920
-            final_video = CompositeVideoClip(visual_clips, size=(1080, 1920))
+            # Composite background clips first
+            background_composite = CompositeVideoClip(visual_clips, size=(1080, 1920)).set_duration(max(vc.end for vc in visual_clips))
+
+            # Composite captions on top of the background
+            final_video = CompositeVideoClip([background_composite] + caption_clips, size=(1080, 1920))
+
 
             if audio_clips:
                 final_audio = CompositeAudioClip(audio_clips)
-                # Ensure video duration matches audio duration if audio exists
                 if final_audio.duration is not None:
-                     final_video = final_video.set_duration(final_audio.duration)
-                     final_video.audio = final_audio
+                     # Trim video to audio duration if audio is shorter, otherwise use video duration
+                     final_duration = min(final_video.duration, final_audio.duration) if final_video.duration else final_audio.duration
+                     final_video = final_video.set_duration(final_duration)
+                     final_video.audio = final_audio.set_duration(final_duration) # Ensure audio duration matches
                 else:
                      print("Warning: Could not determine audio duration.")
-                     # Fallback: Set duration based on visual clips
-                     if final_video.duration is None:
-                         max_end_time = max(vc.end for vc in visual_clips if vc.end is not None and hasattr(vc, 'end'))
-                         if max_end_time is not None:
-                             final_video = final_video.set_duration(max_end_time)
-            else:
-                 # No audio, ensure duration is set from visuals
-                 if final_video.duration is None:
-                     max_end_time = max(vc.end for vc in visual_clips if vc.end is not None and hasattr(vc, 'end'))
-                     if max_end_time is not None:
-                         final_video = final_video.set_duration(max_end_time)
+                     if final_video.duration is None: # Set duration from visuals if no audio duration
+                         max_end_time = max(vc.end for vc in visual_clips if vc.end is not None)
+                         if max_end_time is not None: final_video = final_video.set_duration(max_end_time)
+
+            elif final_video.duration is None: # No audio and no duration from visuals?
+                 max_end_time = max(vc.end for vc in visual_clips if vc.end is not None)
+                 if max_end_time is not None: final_video = final_video.set_duration(max_end_time)
 
 
             if final_video.duration is None:
                 print("Error: Final video duration could not be determined.")
-                final_video = None # Mark as None to prevent writing
+                final_video = None
 
         except Exception as e:
             print(f"Error during final video composition: {e}")
