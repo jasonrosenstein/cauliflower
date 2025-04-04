@@ -6,8 +6,8 @@ from elevenlabs import save
 ELEVENLABS_API_KEY = os.getenv('ELEVENLABS_API_KEY')
 # --- End ElevenLabs Configuration ---
 
-# Using a default voice, you can change this or make it configurable
-DEFAULT_VOICE = "Rachel" # Example voice, change as needed
+# Using a specific voice ID
+DEFAULT_VOICE = "aEO01A4wXwd1O8GPgGlF" # Set to use specific Voice ID
 
 async def generate_audio(text, outputFilename):
     """
