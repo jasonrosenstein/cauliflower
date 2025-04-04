@@ -52,20 +52,27 @@ def getBestVideo(query_string, orientation_landscape=True, used_vids=[]):
     return None
 
 
-def generate_video_url(timed_video_searches,video_server):
-        timed_video_urls = []
-        if video_server == "pexel":
-            used_links = []
-            for (t1, t2), search_terms in timed_video_searches:
-                url = ""
-                for query in search_terms:
-                  
-                    url = getBestVideo(query, orientation_landscape=True, used_vids=used_links)
-                    if url:
-                        used_links.append(url.split('.hd')[0])
-                        break
-                timed_video_urls.append([[t1, t2], url])
-        elif video_server == "stable_diffusion":
-            timed_video_urls = get_images_for_video(timed_video_searches)
+def generate_video_url(timed_video_searches, video_server):
+    """
+    Generates video URLs based on timed keyword phrases.
+    Assumes timed_video_searches is in the format: [[[t1, t2], "keyword phrase 1"], ...]
+    """
+    timed_video_urls = []
+    if video_server == "pexel":
+        used_links = []
+        for (t1, t2), keyword_phrase in timed_video_searches: # Changed variable name
+            url = None # Initialize url as None
+            if keyword_phrase: # Check if a keyword phrase was actually generated
+                # Directly search using the single keyword phrase
+                url = getBestVideo(keyword_phrase, orientation_landscape=True, used_vids=used_links)
+                if url:
+                    used_links.append(url.split('.hd')[0]) # Keep track of used videos
 
-        return timed_video_urls
+            timed_video_urls.append([[t1, t2], url]) # Append segment with found URL or None
+
+    elif video_server == "stable_diffusion":
+        # Assuming get_images_for_video handles the new single keyword format if needed
+        # If not, this part might need adjustment too.
+        timed_video_urls = get_images_for_video(timed_video_searches)
+
+    return timed_video_urls

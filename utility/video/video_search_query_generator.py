@@ -24,26 +24,32 @@ log_directory = ".logs/gpt_logs" # Keep logging directory, though content might 
 
 prompt = """# Instructions
 
-Given the following video script and timed captions, extract three visually concrete and specific keywords for each time segment that can be used to search for background videos. The keywords should be short and capture the main essence of the sentence. They can be synonyms or related terms. If a caption is vague or general, consider the next timed caption for more context. If a keyword is a single word, try to return a two-word keyword that is visually concrete. If a time frame contains two or more important pieces of information, divide it into shorter time frames with one keyword each. Ensure that the time periods are strictly consecutive and cover the entire length of the video. Each keyword should cover between 2-4 seconds. The output should be in JSON format, like this: [[[t1, t2], ["keyword1", "keyword2", "keyword3"]], [[t2, t3], ["keyword4", "keyword5", "keyword6"]], ...]. Please handle all edge cases, such as overlapping time segments, vague or general captions, and single-word keywords.
+Given the following video script and timed captions, generate **one single, best, visually descriptive keyword phrase** for each time segment that accurately represents the main subject or action described in the caption for that specific time segment. This keyword phrase will be used to search for stock videos.
 
-For example, if the caption is 'The cheetah is the fastest land animal, capable of running at speeds up to 75 mph', the keywords should include 'cheetah running', 'fastest animal', and '75 mph'. Similarly, for 'The Great Wall of China is one of the most iconic landmarks in the world', the keywords should be 'Great Wall of China', 'iconic landmark', and 'China landmark'.
+- Focus on **visual concreteness**. The phrase must describe something easily searchable in a video library (e.g., "man walking dog", "computer code scrolling", "ancient Egyptian tomb").
+- **Directly relate** the keyword phrase to the content of the caption segment.
+- If a caption is vague, use context from the script or surrounding captions if necessary, but prioritize the specific segment's content.
+- Aim for phrases, not single words, if possible (e.g., "fast car" instead of "car").
+- Ensure the time periods are strictly consecutive and cover the entire length of the video.
+- Output **only** a valid JSON list in the format: `[[[t1, t2], "best keyword phrase 1"], [[t2, t3], "best keyword phrase 2"], ...]`. Do not include any other text, explanations, or markdown formatting around the JSON.
+
+Example Input:
+Script: The cheetah is the fastest land animal...
+Timed Captions: ((1.0, 3.5), 'cheetah is the fastest') ((3.5, 6.0), 'land animal capable of running')
+
+Example Output:
+[[[1.0, 3.5], "cheetah running fast"], [[3.5, 6.0], "savanna landscape"]]
 
 Important Guidelines:
-
-Use only English in your text queries.
-Each search string must depict something visual.
-The depictions have to be extremely visually concrete, like rainy street, or cat sleeping.
-'emotional moment' <= BAD, because it doesn't depict something visually.
-'crying child' <= GOOD, because it depicts something visual.
-The list must always contain the most relevant and appropriate query searches.
-['Car', 'Car driving', 'Car racing', 'Car parked'] <= BAD, because it's 4 strings.
-['Fast car'] <= GOOD, because it's 1 string.
-['Un chien', 'une voiture rapide', 'une maison rouge'] <= BAD, because the text query is NOT in English.
+- **English Only:** Keywords must be in English.
+- **Visual Focus:** Describe *what you would see*, not abstract concepts. "Sad man" is better than "sadness".
+- **Concise:** Keep phrases relatively short but descriptive.
+- **JSON Only:** The entire output must be only the JSON list, starting with `[` and ending with `]`.
 
 Note: Your response should be the response only and no extra text or data.
-  """
+"""
 
-def fix_json(json_str):
+def fix_json(json_str): # Keep this function as a fallback for potential formatting issues
     # Replace typographical apostrophes with straight quotes
     json_str = json_str.replace("’", "'")
     # Replace any incorrect quotes (e.g., mixed single and double quotes)
