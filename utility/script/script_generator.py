@@ -46,7 +46,7 @@ def generate_script(topic):
 
         You are now tasked with creating the best short script based on the user's requested type of 'facts'.
 
-        Keep it brief, highly interesting, and unique.
+        Keep it brief, highly interesting, and unique. Ensure the generated script text does NOT contain any hashtags (#).
 
         Stictly output the script in a JSON format like below, and only provide a parsable JSON object with the key 'script'.
 
