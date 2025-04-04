@@ -55,6 +55,15 @@ def run_video_script(topic: str, progress=gr.Progress(track_tqdm=True)):
     process_env = os.environ.copy()
     process_env["GOOGLE_API_KEY"] = google_api_key
     process_env["PEXELS_KEY"] = pexels_api_key
+    # Explicitly add ElevenLabs key from parent environment
+    elevenlabs_key = os.environ.get("ELEVENLABS_API_KEY")
+    if elevenlabs_key:
+        process_env["ELEVENLABS_API_KEY"] = elevenlabs_key
+    else:
+        # Handle case where key wasn't set before launching Gradio
+        yield gr.Button(value="Generate Video", interactive=True), "Error: ELEVENLABS_API_KEY environment variable must be set before launching.", None
+        return
+
 
     # Function to read stream and put lines into queue
     def stream_reader(pipe, log_queue, stream_type):
