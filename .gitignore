@@ -1,4 +1,28 @@
+# Logs
 .logs/
+
+# Python virtual environment
 venv/
+/venv/
+
+# Python cache files
 __pycache__/
+*.py[cod]
+
+# OS-specific files
 .DS_Store
+
+# Environment variables
+.env*
+
+# Generated media files
+*.mp4
+*.wav
+*.mp3
+
+# Model files
+*.pt
+
+# Specific untracked files (adjust if needed)
+utility/render/render_engine_aeneas.py
+utility/topic_processor.py
